@@ -1,0 +1,6 @@
+# Build files
+out/
+# Submodules
+libs/*
+# IDE
+.vs

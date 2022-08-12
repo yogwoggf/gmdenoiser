@@ -1,0 +1,23 @@
+{
+	"version": 2,
+	"cmakeMinimumRequired": {
+		"major": 3,
+		"minor": 20,
+		"patch": 0
+	},
+	"configurePresets": [
+		{
+			"name": "x64",
+			"displayName": "x64",
+			"description": "Default build using Ninja generator",
+			"generator": "Ninja",
+			"binaryDir": "${sourceDir}/out/x64"
+		}
+	],
+	"buildPresets": [
+		{
+			"name": "x64",
+			"configurePreset": "x64"
+		}
+	]
+}
