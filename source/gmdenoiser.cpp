@@ -186,16 +186,16 @@ LUA_FUNCTION(IRenderTarget_Denoise) {
 	bool is_hdr = LUA->GetBool(2);
 	bool is_clean_aux = LUA->GetBool(3);
 
-	RT::ITexture* color = LUA->GetUserType<RT::ITexture>(1, g_IRenderTargetID);
+	RT::ITexture* color = *LUA->GetUserType<RT::ITexture*>(1, g_IRenderTargetID);
 	RT::ITexture* albedo = nullptr;
 	RT::ITexture* normal = nullptr;
 
 	if (LUA->IsType(4, g_IRenderTargetID)) {
-		albedo = LUA->GetUserType<RT::ITexture>(4, g_IRenderTargetID);
+		albedo = *LUA->GetUserType<RT::ITexture*>(4, g_IRenderTargetID);
 	}
 
 	if (LUA->IsType(5, g_IRenderTargetID)) {
-		normal = LUA->GetUserType<RT::ITexture>(5, g_IRenderTargetID);
+		normal = *LUA->GetUserType<RT::ITexture*>(5, g_IRenderTargetID);
 	}
 
 	uint16_t width = color->GetWidth();
@@ -270,19 +270,10 @@ LUA_FUNCTION(OnVistraceInit) {
 	// - RenderTarget:Denoise(bool hdr, bool cleanAux, RenderTarget? albedo, RenderTarget? normal)
 	//     - the "color" argument is implicitly the RenderTarget being called with denoise, and this is a self-modifying operation
 
-	HMODULE vistraceModule = GetModuleHandle("gmcl_VisTrace-v0.10.0_win64");
-	if (vistraceModule) {
-		int* ptr = reinterpret_cast<int*>(GetProcAddress(vistraceModule, "g_IRenderTargetID"));
-		if (ptr) {
-			g_IRenderTargetID = static_cast<int>(*ptr);
-		}
-		else {
-			LUA->ThrowError("OIDN: Could not register as an VisTrace extension! (no g_IRenderTargetID)");
-		}
-	}
-	else {
-		LUA->ThrowError("OIDN: VisTraceInit was called, but the module is not loaded within GMod. How?");
-	}
+	LUA->PushSpecial(SPECIAL_REG);
+	LUA->GetField(-1, "VisTraceRT_id");
+	g_IRenderTargetID = static_cast<int>(LUA->CheckNumber(-1));
+	LUA->Pop(); // Pop off registry
 
 	// If all of those checks failed then we have a valid IRenderTarget metatable id
 	bool worked = LUA->PushMetaTable(g_IRenderTargetID);
