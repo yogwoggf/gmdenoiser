@@ -178,30 +178,40 @@ static int g_IRenderTargetID = 0;
 // This is why we create certain OIDN objects and then remove them at the end of the function unlike the raw API above.
 LUA_FUNCTION(IRenderTarget_Denoise) {
 	LUA->CheckType(1, g_IRenderTargetID); // RT
-	LUA->CheckType(2, Type::Bool); // HDR
-	LUA->CheckType(3, Type::Bool); // Clean auxillary
-
+	// 2 and 3 are optional albedo and normal.
+	// 4 and 5 are albedoNoisy and normalNoisy
 	// We need to check if we have any extra buffers we can use.
 
-	bool is_hdr = LUA->GetBool(2);
-	bool is_clean_aux = LUA->GetBool(3);
+	bool albedo_noisy = false;
+	bool normal_noisy = false;
+
+	if (LUA->IsType(4, Type::Bool)) {
+		albedo_noisy = true;
+	}
+
+	if (LUA->IsType(5, Type::Bool)) {
+		normal_noisy = true;
+	}
 
 	RT::ITexture* color = *LUA->GetUserType<RT::ITexture*>(1, g_IRenderTargetID);
 	RT::ITexture* albedo = nullptr;
 	RT::ITexture* normal = nullptr;
 
-	if (LUA->IsType(4, g_IRenderTargetID)) {
-		albedo = *LUA->GetUserType<RT::ITexture*>(4, g_IRenderTargetID);
+	if (LUA->IsType(2, g_IRenderTargetID)) {
+		albedo = *LUA->GetUserType<RT::ITexture*>(2, g_IRenderTargetID);
 	}
 
-	if (LUA->IsType(5, g_IRenderTargetID)) {
-		normal = *LUA->GetUserType<RT::ITexture*>(5, g_IRenderTargetID);
+	if (LUA->IsType(3, g_IRenderTargetID)) {
+		normal = *LUA->GetUserType<RT::ITexture*>(3, g_IRenderTargetID);
 	}
 
 	uint16_t width = color->GetWidth();
 	uint16_t height = color->GetHeight();
 
 	// Check the albedo and normal buffer
+	OIDNDevice dev = oidnNewDevice(OIDN_DEVICE_TYPE_DEFAULT);
+	oidnCommitDevice(dev);
+
 	if (albedo) {
 		if (albedo->GetFormat() != RT::Format::RGBFFF) {
 			LUA->ThrowError("The albedo buffer must be in the format RGBFFF!");
@@ -209,6 +219,30 @@ LUA_FUNCTION(IRenderTarget_Denoise) {
 
 		if (albedo->GetWidth() != width || albedo->GetHeight() != height) {
 			LUA->ThrowError("The albedo buffer must be the same size as the color buffer!");
+		}
+
+		if (albedo_noisy) {
+			// Perform a prefilter.
+			OIDNFilter albedo_prefilter = oidnNewFilter(dev, "RT");
+			float* albedoBuffer = reinterpret_cast<float*>(albedo->GetRawData());
+
+			oidnSetSharedFilterImage(albedo_prefilter, "albedo", albedoBuffer, OIDN_FORMAT_FLOAT3, width, height, 0, 0, 0);
+			oidnSetSharedFilterImage(albedo_prefilter, "output", albedoBuffer, OIDN_FORMAT_FLOAT3, width, height, 0, 0, 0);
+			
+			oidnCommitFilter(albedo_prefilter);
+			oidnExecuteFilter(albedo_prefilter);
+
+			const char* errMsg;
+			if (oidnGetDeviceError(dev, &errMsg) != OIDN_ERROR_NONE) {
+				char formatted_error[500];
+				sprintf(formatted_error, "Error while prefiltering albedo: %s", errMsg);
+
+				oidnReleaseFilter(albedo_prefilter);
+				oidnReleaseDevice(dev);
+				LUA->ThrowError(formatted_error);
+			}
+
+			oidnReleaseFilter(albedo_prefilter);
 		}
 	} 
 
@@ -220,12 +254,34 @@ LUA_FUNCTION(IRenderTarget_Denoise) {
 		if (normal->GetWidth() != width || normal->GetHeight() != height) {
 			LUA->ThrowError("The normal buffer must be the same size as the color buffer!");
 		}
+
+		if (normal_noisy) {
+			// Perform a prefilter.
+			OIDNFilter normal_prefilter = oidnNewFilter(dev, "RT");
+			float* normalBuffer = reinterpret_cast<float*>(normal->GetRawData());
+
+			oidnSetSharedFilterImage(normal_prefilter, "albedo", normalBuffer, OIDN_FORMAT_FLOAT3, width, height, 0, 0, 0);
+			oidnSetSharedFilterImage(normal_prefilter, "output", normalBuffer, OIDN_FORMAT_FLOAT3, width, height, 0, 0, 0);
+
+			oidnCommitFilter(normal_prefilter);
+			oidnExecuteFilter(normal_prefilter);
+
+			const char* errMsg;
+			if (oidnGetDeviceError(dev, &errMsg) != OIDN_ERROR_NONE) {
+				char formatted_error[500];
+				sprintf(formatted_error, "Error while prefiltering normal: %s", errMsg);
+
+				oidnReleaseFilter(normal_prefilter);
+				oidnReleaseDevice(dev);
+
+				LUA->ThrowError(formatted_error);
+			}
+
+			oidnReleaseFilter(normal_prefilter);
+		}
 	}
 
 	float* colorBuffer = reinterpret_cast<float*>(color->GetRawData());
-
-	OIDNDevice dev = oidnNewDevice(OIDN_DEVICE_TYPE_DEFAULT);
-	oidnCommitDevice(dev);
 
 	OIDNFilter filter = oidnNewFilter(dev, "RT");
 	oidnSetSharedFilterImage(filter, "color", colorBuffer, OIDN_FORMAT_FLOAT3, width, height, 0, 0, 0);
@@ -241,8 +297,8 @@ LUA_FUNCTION(IRenderTarget_Denoise) {
 	}
 
 	oidnSetSharedFilterImage(filter, "output", colorBuffer, OIDN_FORMAT_FLOAT3, width, height, 0, 0, 0); // Self-modifying
-	oidnSetFilter1b(filter, "hdr", is_hdr);
-	oidnSetFilter1b(filter, "cleanAux", is_clean_aux);
+	oidnSetFilter1b(filter, "hdr", true);
+	oidnSetFilter1b(filter, "cleanAux", true);
 	oidnCommitFilter(filter);
 
 	// Denoise!!
@@ -252,13 +308,13 @@ LUA_FUNCTION(IRenderTarget_Denoise) {
 
 	if (oidnGetDeviceError(dev, &errMsg) != OIDN_ERROR_NONE) {
 		// Well shit, an error occurred.
-		
-		oidnReleaseFilter(filter);
-		oidnReleaseDevice(dev);
 
 		LUA->ThrowError(errMsg);
 		return 0;
 	}
+
+	oidnReleaseFilter(filter);
+	oidnReleaseDevice(dev);
 
 	// Yay, it all worked!!
 	LUA->PushBool(true);
