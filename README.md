@@ -1,4 +1,6 @@
 ﻿# gmdenoiser 🧽
+[![VisTrace](https://raw.githubusercontent.com/Derpius/VisTrace/ce422d6cad939351609d2b722c1380fc5a8e889a/Branding/extension.svg)](https://github.com/Derpius/VisTrace)
+
 gmdenoiser is a binary module that adds OpenImageDenoise to the GMod Lua environment. This is useful mainly for Monte-Carlo light transport simulations, but can be used with anything else.
 
 # Platforms 🖥
