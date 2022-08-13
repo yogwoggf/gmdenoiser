@@ -25,27 +25,32 @@ LUA_FUNCTION(Filter_SetSharedImage) {
 	const char* type = LUA->GetString(2);
 
 	if (strstr(type, "output")) {
-		int width = static_cast<int>(LUA->GetNumber(4));
-		int height = static_cast<int>(LUA->GetNumber(5));
+		int width = LUA->GetNumber(4);
+		int height = LUA->GetNumber(5);
 
 		output_width = width;
 		output_height = height;
 		output_ptr = malloc(static_cast<size_t>(width) * static_cast<size_t>(height) * 3 * sizeof(float));
+		if (!output_ptr) {
+			LUA->ThrowError("Filter::SetSharedImage - couldn't allocate enough memory for the output of the denoiser!");
+		}
 
 		oidnSetSharedFilterImage(filter, "output", output_ptr, OIDN_FORMAT_FLOAT3, width, height, 0, 0, 0);
 		return 0;
 	}
 
-	int width = static_cast<int>(LUA->GetNumber(4));
-	int height = static_cast<int>(LUA->GetNumber(5));
+	int width = LUA->GetNumber(4);
+	int height = LUA->GetNumber(5);
 
 	if (width <= 0 || height <= 0) {
 		LUA->ThrowError("Filter::SetSharedImage - width or height is below zero or zero");
 	}
 
 	int tableLen = LUA->ObjLen(3);
-	float* data = reinterpret_cast<float*>(malloc(static_cast<size_t>(width * height * 3 * sizeof(float))));
-
+	float* data = reinterpret_cast<float*>(malloc(static_cast<size_t>(width) * static_cast<size_t>(height) * 3 * sizeof(float)));
+	if (!data) {
+		LUA->ThrowError("Filter::SetSharedImage - couldn't allocate enough memory.");
+	}
 
 	for (int idx = 0; idx < tableLen; idx++) {
 		LUA->PushNumber(static_cast<double>(idx) + 1);
@@ -58,12 +63,12 @@ LUA_FUNCTION(Filter_SetSharedImage) {
 		if (dataAtIdxType != Type::Number) {
 			free(data);
 			// Now we can throw a error willy nilly!!
-			char errMsg[600];
-			sprintf(errMsg, "Filter::SetSharedImage - data isnt fully numbers. type: %d. idx: %d. tableLen: %d", dataAtIdxType, idx, tableLen);
+			char errMsg[512];
+			snprintf(errMsg, 512, "Filter::SetSharedImage - data isnt fully numbers. type: %d. idx: %d. tableLen: %d", dataAtIdxType, idx, tableLen);
 			LUA->ThrowError(errMsg);
 		}
 
-		float dataAtIdx = static_cast<float>(LUA->GetNumber(-1));
+		float dataAtIdx = LUA->GetNumber(-1);
 		LUA->Pop();
 
 		data[idx] = dataAtIdx;
@@ -71,6 +76,7 @@ LUA_FUNCTION(Filter_SetSharedImage) {
 
 	// We also have to you know.. put the output ptr
 	// We hide this process from the user because it is very much a hard thing to implement naturally (naturally means oidn writes into a lua table)
+	// This code is very error-prone and is why the vistrace extension should be used as much as possible.
 
 	oidnSetSharedFilterImage(filter, type, reinterpret_cast<void*>(data), OIDN_FORMAT_FLOAT3, width, height, 0, 0, 0);
 
@@ -103,6 +109,10 @@ LUA_FUNCTION(Filter_Execute) {
 
 	LUA->CreateTable();
 	float* output = reinterpret_cast<float*>(output_ptr);
+	if (!output) {
+		LUA->Pop();
+		LUA->ThrowError("Filter::Execute - output is null! (maybe lack of memory)");
+	}
 
 	for (int i = 0; i < output_width * output_height * 3; i++) {
 		LUA->PushNumber(static_cast<double>(i) + 1);
@@ -182,27 +192,30 @@ LUA_FUNCTION(IRenderTarget_Denoise) {
 	// 4 and 5 are albedoNoisy and normalNoisy
 	// We need to check if we have any extra buffers we can use.
 
-	bool albedo_noisy = false;
-	bool normal_noisy = false;
+	bool albedo_noisy = LUA->GetBool(4);
+	bool normal_noisy = LUA->GetBool(5);
 
-	if (LUA->IsType(4, Type::Bool)) {
-		albedo_noisy = true;
-	}
-
-	if (LUA->IsType(5, Type::Bool)) {
-		normal_noisy = true;
-	}
 
 	RT::ITexture* color = *LUA->GetUserType<RT::ITexture*>(1, g_IRenderTargetID);
+	if (!color->IsValid()) {
+		LUA->ThrowError("RenderTarget is invalid!");
+	}
+
 	RT::ITexture* albedo = nullptr;
 	RT::ITexture* normal = nullptr;
 
 	if (LUA->IsType(2, g_IRenderTargetID)) {
 		albedo = *LUA->GetUserType<RT::ITexture*>(2, g_IRenderTargetID);
+		if (!albedo->IsValid()) {
+			LUA->ThrowError("Albedo RT is invalid!");
+		}
 	}
 
 	if (LUA->IsType(3, g_IRenderTargetID)) {
 		normal = *LUA->GetUserType<RT::ITexture*>(3, g_IRenderTargetID);
+		if (!normal->IsValid()) {
+			LUA->ThrowError("Normal RT is invalid!");
+		}
 	}
 
 	uint16_t width = color->GetWidth();
@@ -214,10 +227,12 @@ LUA_FUNCTION(IRenderTarget_Denoise) {
 
 	if (albedo) {
 		if (albedo->GetFormat() != RT::Format::RGBFFF) {
+			oidnReleaseDevice(dev);
 			LUA->ThrowError("The albedo buffer must be in the format RGBFFF!");
 		}
 
 		if (albedo->GetWidth() != width || albedo->GetHeight() != height) {
+			oidnReleaseDevice(dev);
 			LUA->ThrowError("The albedo buffer must be the same size as the color buffer!");
 		}
 
@@ -234,8 +249,8 @@ LUA_FUNCTION(IRenderTarget_Denoise) {
 
 			const char* errMsg;
 			if (oidnGetDeviceError(dev, &errMsg) != OIDN_ERROR_NONE) {
-				char formatted_error[500];
-				sprintf(formatted_error, "Error while prefiltering albedo: %s", errMsg);
+				char formatted_error[512];
+				snprintf(formatted_error, 512, "Error while prefiltering albedo: %s", errMsg);
 
 				oidnReleaseFilter(albedo_prefilter);
 				oidnReleaseDevice(dev);
@@ -248,10 +263,12 @@ LUA_FUNCTION(IRenderTarget_Denoise) {
 
 	if (normal) {
 		if (normal->GetFormat() != RT::Format::RGBFFF) {
+			oidnReleaseDevice(dev);
 			LUA->ThrowError("The normal buffer must be in the format RGBFFF!");
 		}
 
 		if (normal->GetWidth() != width || normal->GetHeight() != height) {
+			oidnReleaseDevice(dev);
 			LUA->ThrowError("The normal buffer must be the same size as the color buffer!");
 		}
 
@@ -260,7 +277,7 @@ LUA_FUNCTION(IRenderTarget_Denoise) {
 			OIDNFilter normal_prefilter = oidnNewFilter(dev, "RT");
 			float* normalBuffer = reinterpret_cast<float*>(normal->GetRawData());
 
-			oidnSetSharedFilterImage(normal_prefilter, "albedo", normalBuffer, OIDN_FORMAT_FLOAT3, width, height, 0, 0, 0);
+			oidnSetSharedFilterImage(normal_prefilter, "normal", normalBuffer, OIDN_FORMAT_FLOAT3, width, height, 0, 0, 0);
 			oidnSetSharedFilterImage(normal_prefilter, "output", normalBuffer, OIDN_FORMAT_FLOAT3, width, height, 0, 0, 0);
 
 			oidnCommitFilter(normal_prefilter);
@@ -268,8 +285,8 @@ LUA_FUNCTION(IRenderTarget_Denoise) {
 
 			const char* errMsg;
 			if (oidnGetDeviceError(dev, &errMsg) != OIDN_ERROR_NONE) {
-				char formatted_error[500];
-				sprintf(formatted_error, "Error while prefiltering normal: %s", errMsg);
+				char formatted_error[512];
+				snprintf(formatted_error, 512, "Error while prefiltering normal: %s", errMsg);
 
 				oidnReleaseFilter(normal_prefilter);
 				oidnReleaseDevice(dev);
@@ -309,6 +326,9 @@ LUA_FUNCTION(IRenderTarget_Denoise) {
 	if (oidnGetDeviceError(dev, &errMsg) != OIDN_ERROR_NONE) {
 		// Well shit, an error occurred.
 
+		oidnReleaseFilter(filter);
+		oidnReleaseDevice(dev);
+
 		LUA->ThrowError(errMsg);
 		return 0;
 	}
@@ -317,8 +337,7 @@ LUA_FUNCTION(IRenderTarget_Denoise) {
 	oidnReleaseDevice(dev);
 
 	// Yay, it all worked!!
-	LUA->PushBool(true);
-	return 1;
+	return 0;
 }
 
 LUA_FUNCTION(OnVistraceInit) {
@@ -328,7 +347,7 @@ LUA_FUNCTION(OnVistraceInit) {
 
 	LUA->PushSpecial(SPECIAL_REG);
 	LUA->GetField(-1, "VisTraceRT_id");
-	g_IRenderTargetID = static_cast<int>(LUA->CheckNumber(-1));
+	g_IRenderTargetID = LUA->CheckNumber(-1);
 	LUA->Pop(); // Pop off registry
 
 	// If all of those checks failed then we have a valid IRenderTarget metatable id
