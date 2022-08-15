@@ -1,11 +1,12 @@
 #include "GarrysMod/Lua/Interface.h"
 #include "OpenImageDenoise/oidn.h"
-#include "vistrace/IRenderTarget.h"
+#include "vistrace.h"
 
 #include <Windows.h>
 #include <memory>
 
 using namespace GarrysMod::Lua;
+using namespace VisTrace;
 #define PUSH_CFUNC(func, name) LUA->PushCFunction(func); LUA->SetField(-2, name);
 
 #pragma region Filter
@@ -195,24 +196,24 @@ LUA_FUNCTION(IRenderTarget_Denoise) {
 	bool albedo_noisy = LUA->GetBool(4);
 	bool normal_noisy = LUA->GetBool(5);
 
-
-	RT::ITexture* color = *LUA->GetUserType<RT::ITexture*>(1, g_IRenderTargetID);
+	
+	IRenderTarget* color = *LUA->GetUserType<IRenderTarget*>(1, g_IRenderTargetID);
 	if (!color->IsValid()) {
 		LUA->ThrowError("RenderTarget is invalid!");
 	}
 
-	RT::ITexture* albedo = nullptr;
-	RT::ITexture* normal = nullptr;
+	IRenderTarget* albedo = nullptr;
+	IRenderTarget* normal = nullptr;
 
 	if (LUA->IsType(2, g_IRenderTargetID)) {
-		albedo = *LUA->GetUserType<RT::ITexture*>(2, g_IRenderTargetID);
+		albedo = *LUA->GetUserType<IRenderTarget*>(2, g_IRenderTargetID);
 		if (!albedo->IsValid()) {
 			LUA->ThrowError("Albedo RT is invalid!");
 		}
 	}
 
 	if (LUA->IsType(3, g_IRenderTargetID)) {
-		normal = *LUA->GetUserType<RT::ITexture*>(3, g_IRenderTargetID);
+		normal = *LUA->GetUserType<IRenderTarget*>(3, g_IRenderTargetID);
 		if (!normal->IsValid()) {
 			LUA->ThrowError("Normal RT is invalid!");
 		}
@@ -226,7 +227,7 @@ LUA_FUNCTION(IRenderTarget_Denoise) {
 	oidnCommitDevice(dev);
 
 	if (albedo) {
-		if (albedo->GetFormat() != RT::Format::RGBFFF) {
+		if (albedo->GetFormat() != RTFormat::RGBFFF) {
 			oidnReleaseDevice(dev);
 			LUA->ThrowError("The albedo buffer must be in the format RGBFFF!");
 		}
@@ -262,7 +263,7 @@ LUA_FUNCTION(IRenderTarget_Denoise) {
 	} 
 
 	if (normal) {
-		if (normal->GetFormat() != RT::Format::RGBFFF) {
+		if (normal->GetFormat() != RTFormat::RGBFFF) {
 			oidnReleaseDevice(dev);
 			LUA->ThrowError("The normal buffer must be in the format RGBFFF!");
 		}
