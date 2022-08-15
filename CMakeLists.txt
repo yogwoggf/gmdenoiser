@@ -8,7 +8,7 @@ add_library(gmdenoiser SHARED "source/gmdenoiser.cpp")
 set_target_properties(${PROJECT_NAME} PROPERTIES PREFIX "gmcl_" SUFFIX "_win64.dll")
 
 target_include_directories(${PROJECT_NAME} PRIVATE
-	"libs/VisTrace/Module/include"
+	"libs/VisTrace/include"
 	"libs/gmod-module-base/include"
 	"libs/oidn/include/"
 )
