@@ -240,7 +240,7 @@ LUA_FUNCTION(IRenderTarget_Denoise) {
 		if (albedo_noisy) {
 			// Perform a prefilter.
 			OIDNFilter albedo_prefilter = oidnNewFilter(dev, "RT");
-			float* albedoBuffer = reinterpret_cast<float*>(albedo->GetRawData());
+			float* albedoBuffer = reinterpret_cast<float*>(albedo->GetRawData(0));
 
 			oidnSetSharedFilterImage(albedo_prefilter, "albedo", albedoBuffer, OIDN_FORMAT_FLOAT3, width, height, 0, 0, 0);
 			oidnSetSharedFilterImage(albedo_prefilter, "output", albedoBuffer, OIDN_FORMAT_FLOAT3, width, height, 0, 0, 0);
@@ -276,7 +276,7 @@ LUA_FUNCTION(IRenderTarget_Denoise) {
 		if (normal_noisy) {
 			// Perform a prefilter.
 			OIDNFilter normal_prefilter = oidnNewFilter(dev, "RT");
-			float* normalBuffer = reinterpret_cast<float*>(normal->GetRawData());
+			float* normalBuffer = reinterpret_cast<float*>(normal->GetRawData(0));
 
 			oidnSetSharedFilterImage(normal_prefilter, "normal", normalBuffer, OIDN_FORMAT_FLOAT3, width, height, 0, 0, 0);
 			oidnSetSharedFilterImage(normal_prefilter, "output", normalBuffer, OIDN_FORMAT_FLOAT3, width, height, 0, 0, 0);
@@ -299,18 +299,18 @@ LUA_FUNCTION(IRenderTarget_Denoise) {
 		}
 	}
 
-	float* colorBuffer = reinterpret_cast<float*>(color->GetRawData());
+	float* colorBuffer = reinterpret_cast<float*>(color->GetRawData(0));
 
 	OIDNFilter filter = oidnNewFilter(dev, "RT");
 	oidnSetSharedFilterImage(filter, "color", colorBuffer, OIDN_FORMAT_FLOAT3, width, height, 0, 0, 0);
 
 	if (albedo) {
-		float* albedoBuffer = reinterpret_cast<float*>(albedo->GetRawData());
+		float* albedoBuffer = reinterpret_cast<float*>(albedo->GetRawData(0));
 		oidnSetSharedFilterImage(filter, "albedo", albedoBuffer, OIDN_FORMAT_FLOAT3, width, height, 0, 0, 0);
 	}
 
 	if (normal) {
-		float* normalBuffer = reinterpret_cast<float*>(normal->GetRawData());
+		float* normalBuffer = reinterpret_cast<float*>(normal->GetRawData(0));
 		oidnSetSharedFilterImage(filter, "normal", normalBuffer, OIDN_FORMAT_FLOAT3, width, height, 0, 0, 0);
 	}
 
