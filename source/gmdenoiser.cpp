@@ -168,7 +168,7 @@ LUA_FUNCTION(IRenderTarget_Denoise) {
 
 VISTRACE_EXTENSION_OPEN(gmdenoiser) {
 	// We add this specific extension API:
-	// - RenderTarget:Denoise(bool hdr, bool cleanAux, RenderTarget? albedo, RenderTarget? normal)
+	// - RenderTarget:Denoise(RenderTarget? albedo, RenderTarget? normal, bool albedoNoisy, bool normalNoisy)
 	//     - the "color" argument is implicitly the RenderTarget being called with denoise, and this is a self-modifying operation
 
 	bool worked = LUA->PushMetaTable(VType::RenderTarget);

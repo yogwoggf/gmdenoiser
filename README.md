@@ -10,8 +10,21 @@ gmdenoiser currently only supports 64-bit Windows. Multiplatform support is curr
 
 # Installing 📂
 
-gmdenoiser can be built from source or downloaded from the Releases. There is some setup involved. From the binaries (linked in Building), there's a `bin` folder. Copy all of the dlls inside that bin folder to your root GarrysMod folder. (the one in `steamapps/common`)
+gmdenoiser can be built from source or downloaded from the Releases. There is some setup involved. From the [binaries](https://github.com/OpenImageDenoise/oidn/releases/download/v1.4.3/oidn-1.4.3.x64.vc14.windows.zip), there's a `bin` folder. Copy all of the dlls inside that bin folder to your root GarrysMod folder. (the one in `steamapps/common`)
 
+# API 🛠
+
+gmdenoiser adds 1 simple function to the VisTrace RenderTarget type.
+```lua
+local rt = vistrace.CreateRenderTarget(...)
+rt:Denoise(albedo, normal, albedoNoisy, normalNoisy)
+-- Works without any parameters
+rt:Denoise()
+-- Works with only some
+rt:Denoise(albedo)
+-- This should be your ideal denoise call:
+rt:Denoise(albedo, normal, albedoNoisy, normalNoisy)
+```
 # Building 🏗
 
 To build, you'll need:
