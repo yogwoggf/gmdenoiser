@@ -20,6 +20,7 @@ LUA_FUNCTION(IRenderTarget_Denoise) {
 
 	bool albedo_noisy = LUA->GetBool(4);
 	bool normal_noisy = LUA->GetBool(5);
+	bool hdr = LUA->GetBool(6);
 	
 	IRenderTarget* color = *LUA->GetUserType<IRenderTarget*>(1, VType::RenderTarget);
 	if (!color->IsValid()) {
@@ -139,7 +140,7 @@ LUA_FUNCTION(IRenderTarget_Denoise) {
 	}
 
 	oidnSetSharedFilterImage(filter, "output", colorBuffer, OIDN_FORMAT_FLOAT3, width, height, 0, 0, 0); // Self-modifying
-	oidnSetFilter1b(filter, "hdr", true);
+	oidnSetFilter1b(filter, "hdr", hdr);
 	oidnSetFilter1b(filter, "cleanAux", true);
 	oidnCommitFilter(filter);
 

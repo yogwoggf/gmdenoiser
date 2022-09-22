@@ -17,14 +17,17 @@ gmdenoiser can be built from source or downloaded from the Releases. There is so
 gmdenoiser adds 1 simple function to the VisTrace RenderTarget type.
 ```lua
 local rt = vistrace.CreateRenderTarget(...)
-rt:Denoise(albedo, normal, albedoNoisy, normalNoisy)
+rt:Denoise(albedo, normal, albedoNoisy, normalNoisy, hdr)
 -- Works without any parameters
 rt:Denoise()
 -- Works with only some
 rt:Denoise(albedo)
--- This should be your ideal denoise call:
-rt:Denoise(albedo, normal, albedoNoisy, normalNoisy)
+-- This should be your ideal denoise call, all of these parameters should be filled out:
+rt:Denoise(albedo, normal, albedoNoisy, normalNoisy, hdr)
 ```
+
+Note: Denoising as a LDR image might be beneficial because OpenImageDenoise's documentation states that HDR images are interpreted in physical units. The accuracy of these physical units (they're automatically inferred) may lower quality of the output.
+
 # Building 🏗
 
 To build, you'll need:
