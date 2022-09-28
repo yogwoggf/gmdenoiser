@@ -17,16 +17,33 @@ gmdenoiser can be built from source or downloaded from the Releases. There is so
 gmdenoiser adds 1 simple function to the VisTrace RenderTarget type.
 ```lua
 local rt = vistrace.CreateRenderTarget(...)
-rt:Denoise(albedo, normal, albedoNoisy, normalNoisy, hdr)
--- Works without any parameters
-rt:Denoise()
--- Works with only some
-rt:Denoise(albedo)
--- This should be your ideal denoise call, all of these parameters should be filled out:
-rt:Denoise(albedo, normal, albedoNoisy, normalNoisy, hdr)
+rt:Denoise({
+	-- Pass in your auxillary buffers, if any.
+	Albedo = albedo,
+	Normal = normal,
+
+	-- If you do pass any in, you must tell the denoiser if its noisy or not.
+	AlbedoNoisy = false,
+	NormalNoisy = false,
+
+	-- HDR and sRGB are mutally exclusive, you cannot enable both.
+	HDR = true,
+	sRGB = false
+})
+
+-- You're also allowed to pass nothing.
+-- Doing this will produce a very bad output.
+rt:Denoise({})
+
+-- You can pass some parameters, but here are the base rules that will allow for a successful denoise.
+-- Any auxillary image (Albedo, Normal) will require their Noisy boolean to be filled out.
+-- If you only pass Albedo, then you need to pass in AlbedoNoisy as well. Likewise with Normal.
+
+-- HDR and sRGB cannot be enabled at the same time.
 ```
 
 Note: Denoising as a LDR image might be beneficial because OpenImageDenoise's documentation states that HDR images are interpreted in physical units. The accuracy of these physical units (they're automatically inferred) may lower quality of the output.
+To activate gmdenoiser, you simply need to `require` the binary. You can do this whenever you want, but if you do it before VisTrace loads, it will wait until VisTrace loads.
 
 # Building 🏗
 

@@ -1,56 +1,125 @@
+#include <cstdio>
+
 #include "GarrysMod/Lua/Interface.h"
 #include "OpenImageDenoise/oidn.h"
 #include "vistrace.h"
-
-#include <cstdio>
 
 using namespace GarrysMod::Lua;
 using namespace VisTrace;
 #define PUSH_CFUNC(func, name) LUA->PushCFunction(func); LUA->SetField(-2, name);
 
 #pragma region VisTrace Extension
-// Remember that this and the OIDN raw api that we created above are NOT connected.
-// This is supposed to be a mindless 1 click ez-denoise button with some options for finer control.
-// This is why we create certain OIDN objects and then remove them at the end of the function unlike the raw API above.
 LUA_FUNCTION(IRenderTarget_Denoise) {
 	LUA->CheckType(1, VType::RenderTarget); // RT
-	// 2 and 3 are optional albedo and normal.ate it
-	// 4 and 5 are albedoNoisy and normalNoisy
-	// We need to check if we have any extra buffers we can use.
+	LUA->CheckType(2, Type::Table); // Info
 
-	bool albedo_noisy = LUA->GetBool(4);
-	bool normal_noisy = LUA->GetBool(5);
-	bool hdr = LUA->GetBool(6);
+	// Information structure:
+	// RT Albedo = null
+	// RT Normal = null
+	// bool AlbedoNoisy = false, but required to know if albedo is filled out
+	// bool NormalNoisy = false, but required to know if normal is filled out
+	// bool HDR
+	// bool sRGB Can't be enabled if HDR is enabled
+	// Anything with no default value must be filled out (for the users sake to provide the best possible output
+	
 	
 	IRenderTarget* color = *LUA->GetUserType<IRenderTarget*>(1, VType::RenderTarget);
 	if (!color->IsValid()) {
 		LUA->ThrowError("RenderTarget is invalid!");
 	}
 
+	if (color->GetFormat() != RTFormat::RGBFFF) {
+		LUA->ThrowError("RenderTarget is not in RGBFFF!");
+	}
+
 	IRenderTarget* albedo = nullptr;
 	IRenderTarget* normal = nullptr;
 
-	if (LUA->IsType(2, VType::RenderTarget)) {
-		albedo = *LUA->GetUserType<IRenderTarget*>(2, VType::RenderTarget);
+	bool albedoNoisy = false, normalNoisy = false;
+	bool hdr = false, sRGB = false;
+
+	// Read info
+	LUA->GetField(-1, "Albedo");
+	if (LUA->IsType(-1, VType::RenderTarget)) {
+		albedo = *LUA->GetUserType<IRenderTarget*>(-1, VType::RenderTarget);
+		LUA->Pop(); // Pop off the albedo pointer
 		if (!albedo->IsValid()) {
 			LUA->ThrowError("Albedo RT is invalid!");
 		}
 	}
-
-	if (LUA->IsType(3, VType::RenderTarget)) {
-		normal = *LUA->GetUserType<IRenderTarget*>(3, VType::RenderTarget);
+	else {
+		LUA->Pop();
+	}
+	
+	LUA->GetField(-1, "Normal");
+	if (LUA->IsType(-1, VType::RenderTarget)) {
+		normal = *LUA->GetUserType<IRenderTarget*>(-1, VType::RenderTarget);
+		LUA->Pop(); // Pop off the normal pointer
 		if (!normal->IsValid()) {
 			LUA->ThrowError("Normal RT is invalid!");
 		}
 	}
+	else {
+		LUA->Pop();
+	}
 
+	LUA->GetField(-1, "AlbedoNoisy");
+	if (!LUA->IsType(-1, Type::Bool)) {
+		// It's not filled out.
+		// If albedo is filled out, require this to be filled out aswell
+		if (albedo) {
+			LUA->ThrowError("AlbedoNoisy must be filled out!");
+		}
+		else {
+			LUA->Pop(); // Fall back to default value
+		}
+	}
+	else {
+		albedoNoisy = LUA->GetBool();
+		LUA->Pop();
+	}
+
+	LUA->GetField(-1, "NormalNoisy");
+	if (!LUA->IsType(-1, Type::Bool)) {
+		// It's not filled out.
+		// If albedo is filled out, require this to be filled out aswell
+		if (normal) {
+			LUA->ThrowError("NormalNoisy must be filled out!");
+		}
+		else {
+			LUA->Pop(); // Fall back to default value
+		}
+	}
+	else {
+		normalNoisy = LUA->GetBool();
+		LUA->Pop();
+	}
+
+	LUA->GetField(-1, "HDR");
+	hdr = LUA->GetBool();
+	LUA->Pop();
+
+	LUA->GetField(-1, "sRGB");
+	sRGB = LUA->GetBool();
+	LUA->Pop();
+
+	// Pop off information table
+	LUA->Pop();
+
+	if (hdr && sRGB) {
+		// Cant have both.
+		LUA->ThrowError("HDR and sRGB are both enabled. This is not possible!");
+	}
+	
 	uint16_t width = color->GetWidth();
 	uint16_t height = color->GetHeight();
 
-	// Check the albedo and normal buffer
 	OIDNDevice dev = oidnNewDevice(OIDN_DEVICE_TYPE_DEFAULT);
 	oidnCommitDevice(dev);
 
+	// Past this point, throwing errors may cause leaks if you don't release the OIDN resources!
+
+	// Prefiltering
 	if (albedo) {
 		if (albedo->GetFormat() != RTFormat::RGBFFF) {
 			oidnReleaseDevice(dev);
@@ -62,28 +131,28 @@ LUA_FUNCTION(IRenderTarget_Denoise) {
 			LUA->ThrowError("The albedo buffer must be the same size as the color buffer!");
 		}
 
-		if (albedo_noisy) {
+		if (albedoNoisy) {
 			// Perform a prefilter.
-			OIDNFilter albedo_prefilter = oidnNewFilter(dev, "RT");
+			OIDNFilter albedoPrefilter = oidnNewFilter(dev, "RT");
 			float* albedoBuffer = reinterpret_cast<float*>(albedo->GetRawData(0));
 
-			oidnSetSharedFilterImage(albedo_prefilter, "albedo", albedoBuffer, OIDN_FORMAT_FLOAT3, width, height, 0, 0, 0);
-			oidnSetSharedFilterImage(albedo_prefilter, "output", albedoBuffer, OIDN_FORMAT_FLOAT3, width, height, 0, 0, 0);
+			oidnSetSharedFilterImage(albedoPrefilter, "albedo", albedoBuffer, OIDN_FORMAT_FLOAT3, width, height, 0, 0, 0);
+			oidnSetSharedFilterImage(albedoPrefilter, "output", albedoBuffer, OIDN_FORMAT_FLOAT3, width, height, 0, 0, 0);
 			
-			oidnCommitFilter(albedo_prefilter);
-			oidnExecuteFilter(albedo_prefilter);
+			oidnCommitFilter(albedoPrefilter);
+			oidnExecuteFilter(albedoPrefilter);
 
 			const char* errMsg;
 			if (oidnGetDeviceError(dev, &errMsg) != OIDN_ERROR_NONE) {
 				char formatted_error[512];
 				snprintf(formatted_error, 512, "Error while prefiltering albedo: %s", errMsg);
 
-				oidnReleaseFilter(albedo_prefilter);
+				oidnReleaseFilter(albedoPrefilter);
 				oidnReleaseDevice(dev);
 				LUA->ThrowError(formatted_error);
 			}
 
-			oidnReleaseFilter(albedo_prefilter);
+			oidnReleaseFilter(albedoPrefilter);
 		}
 	} 
 
@@ -98,29 +167,29 @@ LUA_FUNCTION(IRenderTarget_Denoise) {
 			LUA->ThrowError("The normal buffer must be the same size as the color buffer!");
 		}
 
-		if (normal_noisy) {
+		if (normalNoisy) {
 			// Perform a prefilter.
-			OIDNFilter normal_prefilter = oidnNewFilter(dev, "RT");
+			OIDNFilter normalPrefilter = oidnNewFilter(dev, "RT");
 			float* normalBuffer = reinterpret_cast<float*>(normal->GetRawData(0));
 
-			oidnSetSharedFilterImage(normal_prefilter, "normal", normalBuffer, OIDN_FORMAT_FLOAT3, width, height, 0, 0, 0);
-			oidnSetSharedFilterImage(normal_prefilter, "output", normalBuffer, OIDN_FORMAT_FLOAT3, width, height, 0, 0, 0);
+			oidnSetSharedFilterImage(normalPrefilter, "normal", normalBuffer, OIDN_FORMAT_FLOAT3, width, height, 0, 0, 0);
+			oidnSetSharedFilterImage(normalPrefilter, "output", normalBuffer, OIDN_FORMAT_FLOAT3, width, height, 0, 0, 0);
 
-			oidnCommitFilter(normal_prefilter);
-			oidnExecuteFilter(normal_prefilter);
+			oidnCommitFilter(normalPrefilter);
+			oidnExecuteFilter(normalPrefilter);
 
 			const char* errMsg;
 			if (oidnGetDeviceError(dev, &errMsg) != OIDN_ERROR_NONE) {
 				char formatted_error[512];
 				snprintf(formatted_error, 512, "Error while prefiltering normal: %s", errMsg);
 
-				oidnReleaseFilter(normal_prefilter);
+				oidnReleaseFilter(normalPrefilter);
 				oidnReleaseDevice(dev);
 
 				LUA->ThrowError(formatted_error);
 			}
 
-			oidnReleaseFilter(normal_prefilter);
+			oidnReleaseFilter(normalPrefilter);
 		}
 	}
 
@@ -141,6 +210,8 @@ LUA_FUNCTION(IRenderTarget_Denoise) {
 
 	oidnSetSharedFilterImage(filter, "output", colorBuffer, OIDN_FORMAT_FLOAT3, width, height, 0, 0, 0); // Self-modifying
 	oidnSetFilter1b(filter, "hdr", hdr);
+	oidnSetFilter1b(filter, "srgb", sRGB);
+	// Ensured in our sense because of prefiltering, but not always true because the user might mess up and pass in noisy auxillary images.
 	oidnSetFilter1b(filter, "cleanAux", true);
 	oidnCommitFilter(filter);
 
@@ -168,16 +239,13 @@ LUA_FUNCTION(IRenderTarget_Denoise) {
 #pragma endregion
 
 VISTRACE_EXTENSION_OPEN(gmdenoiser) {
-	// We add this specific extension API:
-	// - RenderTarget:Denoise(RenderTarget? albedo, RenderTarget? normal, bool albedoNoisy, bool normalNoisy)
-	//     - the "color" argument is implicitly the RenderTarget being called with denoise, and this is a self-modifying operation
-
 	bool worked = LUA->PushMetaTable(VType::RenderTarget);
 	if (!worked) {
-		LUA->ThrowError("OIDN: No IRenderTarget metatable found within GMod!");
+		// Only for this error, we will clearly specify that this is gmdenoiser. It might be unclear what is causing this error to someone who is skimming over Console.
+		LUA->ThrowError("gmdenoiser: Failed to modify RenderTarget. (the extension will not function)");
 	}
 
-	// Add our own functions
+	// Add the functions.
 	PUSH_CFUNC(IRenderTarget_Denoise, "Denoise");
 	LUA->Pop(1); // Done!!
 }
